@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format, addDays, parseISO, eachDayOfInterval } from 'date-fns';
@@ -164,9 +164,11 @@ function PlanningDetail({ planning, onBack }) {
   const [showRecipePicker, setShowRecipePicker] = useState(null);
   const [showWeekView, setShowWeekView] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
-  const [pickerTab, setPickerTab] = useState('free'); // 'free' | 'recipe'
+  const [pickerTab, setPickerTab] = useState('free');
   const [freeText, setFreeText] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'pending'
+  const saveTimer = useRef(null);
+  const isFirstLoad = useRef(true);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'recipes'), (snapshot) => {
@@ -181,11 +183,35 @@ function PlanningDetail({ planning, onBack }) {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'plannings', planning.id), (snapshot) => {
       if (snapshot.exists()) {
-        setMeals(snapshot.data().meals || {});
+        // Only sync from Firestore on first load, not after local changes
+        if (isFirstLoad.current) {
+          setMeals(snapshot.data().meals || {});
+          isFirstLoad.current = false;
+        }
       }
     });
     return unsub;
   }, [planning.id]);
+
+  // Auto-save with debounce whenever meals change
+  const autoSave = useCallback(async (mealsToSave) => {
+    setSaveStatus('saving');
+    try {
+      await setDoc(doc(db, 'plannings', planning.id), { meals: mealsToSave }, { merge: true });
+      setSaveStatus('saved');
+    } catch (err) {
+      console.error('Auto-save error:', err);
+      setSaveStatus('pending');
+    }
+  }, [planning.id]);
+
+  useEffect(() => {
+    if (isFirstLoad.current) return;
+    setSaveStatus('pending');
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => autoSave(meals), 800);
+    return () => clearTimeout(saveTimer.current);
+  }, [meals, autoSave]);
 
   const days = (() => {
     try {
@@ -241,17 +267,7 @@ function PlanningDetail({ planning, onBack }) {
     setShowRecipePicker(null);
     setRecipeSearch('');
     setFreeText('');
-    setPickerTab('recipe');
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await setDoc(doc(db, 'plannings', planning.id), { ...planning, meals }, { merge: true });
-    } catch (error) {
-      console.error('Save error:', error);
-    }
-    setSaving(false);
+    setPickerTab('free');
   };
 
   const filteredRecipes = recipes.filter(r =>
@@ -280,9 +296,16 @@ function PlanningDetail({ planning, onBack }) {
               </svg>
               Vue
             </button>
-            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-              {saving ? '...' : 'Sauver'}
-            </button>
+            <div className={`save-status save-status--${saveStatus}`}>
+              {saveStatus === 'saving' && <><div className="save-spinner" /> Sauvegarde…</>}
+              {saveStatus === 'saved' && <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
+                  <polyline points="20,6 9,17 4,12"/>
+                </svg>
+                Sauvegardé
+              </>}
+              {saveStatus === 'pending' && '…'}
+            </div>
           </div>
         </div>
       </div>

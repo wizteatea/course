@@ -184,51 +184,107 @@
   color: var(--text-tertiary);
 }
 
-/* Planned meals */
-.planned-meals-list {
+/* Planned meals modal */
+.meals-modal .modal-body {
+  max-height: 75dvh;
+  overflow-y: auto;
+}
+
+.meals-modal-body {
+  padding-bottom: 8px;
+}
+
+.meals-by-day {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.meals-day-group {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.meals-day-header {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-bg);
+  padding: 8px 12px;
+  text-transform: capitalize;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.meals-day-slots {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.meals-slot-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.meals-slot-row:last-child {
+  border-bottom: none;
+}
+
+.meals-slot-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+.meals-slot-icon {
+  font-size: 14px;
+}
+
+.meals-slot-entries {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.planned-meal-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--border-light);
-  border-radius: var(--radius-sm);
-}
-
-.planned-meal-date {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: capitalize;
-  min-width: 80px;
-}
-
-.planned-meal-info {
-  flex: 1;
+.meals-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 6px 10px;
+  background: var(--border-light);
+  border-radius: 8px;
 }
 
-.planned-meal-recipe {
+.meals-entry-recipe {
   font-size: 14px;
   font-weight: 500;
   color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.planned-meal-user {
-  font-size: 12px;
+.meals-entry-user {
+  font-size: 11px;
+  font-weight: 700;
   color: var(--primary);
-  font-weight: 600;
   background: var(--primary-bg);
   padding: 2px 8px;
   border-radius: 12px;
+  flex-shrink: 0;
+  text-transform: capitalize;
 }
 
 .no-results {

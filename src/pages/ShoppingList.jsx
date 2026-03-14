@@ -22,6 +22,15 @@ const CATEGORY_ICONS = {
   'Autres': '📦',
 };
 
+const SLOT_LABELS = {
+  breakfast: { label: 'Petit-déj', icon: '🌅' },
+  snack1: { label: 'Collation', icon: '🍎' },
+  lunch: { label: 'Déjeuner', icon: '🍽️' },
+  snack2: { label: 'Collation', icon: '🍪' },
+  dinner: { label: 'Dîner', icon: '🌙' },
+  snack3: { label: 'Collation', icon: '🥛' },
+};
+
 // ─── Page liste des plannings ───────────────────────────────────────────────
 
 export default function ShoppingList() {
@@ -594,10 +603,10 @@ function ShoppingListDetail({ planning, onBack }) {
         </div>
       )}
 
-      {/* Modal repas planifiés */}
+      {/* Modal repas planifiés — groupé par jour */}
       {showMeals && (
         <div className="modal-overlay" onClick={() => setShowMeals(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content meals-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Repas planifiés</h2>
               <button className="btn-ghost btn-icon" onClick={() => setShowMeals(false)}>
@@ -606,17 +615,31 @@ function ShoppingListDetail({ planning, onBack }) {
                 </svg>
               </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body meals-modal-body">
               {plannedMeals.length === 0 ? (
                 <p className="no-results">Aucun repas planifié</p>
               ) : (
-                <div className="planned-meals-list">
-                  {plannedMeals.map((meal, i) => (
-                    <div key={i} className="planned-meal-item">
-                      <div className="planned-meal-date">{formatDateShort(meal.date)}</div>
-                      <div className="planned-meal-info">
-                        <span className="planned-meal-recipe">{meal.recipe.title}</span>
-                        <span className="planned-meal-user">{meal.user}</span>
+                <div className="meals-by-day">
+                  {groupMealsByDay(plannedMeals).map(({ date, label, slots }) => (
+                    <div key={date} className="meals-day-group">
+                      <div className="meals-day-header">{label}</div>
+                      <div className="meals-day-slots">
+                        {slots.map((slot, si) => (
+                          <div key={si} className="meals-slot-row">
+                            <div className="meals-slot-label">
+                              <span className="meals-slot-icon">{slot.icon}</span>
+                              <span>{slot.label}</span>
+                            </div>
+                            <div className="meals-slot-entries">
+                              {slot.entries.map((entry, ei) => (
+                                <div key={ei} className="meals-entry">
+                                  <span className="meals-entry-recipe">{entry.recipe}</span>
+                                  <span className="meals-entry-user">{entry.user}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -663,6 +686,34 @@ function mergeQuantities(quantities) {
     }
   }
   return quantities.join(' + ');
+}
+
+function groupMealsByDay(meals) {
+  const dayMap = {};
+  const slotOrder = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner', 'snack3'];
+  meals.forEach(m => {
+    if (!dayMap[m.date]) dayMap[m.date] = {};
+    if (!dayMap[m.date][m.slotId]) dayMap[m.date][m.slotId] = [];
+    dayMap[m.date][m.slotId].push({ recipe: m.recipe.title, user: m.user });
+  });
+  return Object.entries(dayMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, slotData]) => ({
+      date,
+      label: formatDateFull(date),
+      slots: slotOrder
+        .filter(s => slotData[s])
+        .map(s => ({
+          icon: SLOT_LABELS[s]?.icon || '',
+          label: SLOT_LABELS[s]?.label || s,
+          entries: slotData[s],
+        })),
+    }));
+}
+
+function formatDateFull(dateStr) {
+  try { return format(parseISO(dateStr), 'EEEE d MMMM', { locale: fr }); }
+  catch { return dateStr; }
 }
 
 function formatDateLabel(dateStr) {

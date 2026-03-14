@@ -241,6 +241,34 @@
   background: var(--primary-bg);
 }
 
+/* Picker tabs */
+.picker-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.picker-tab {
+  flex: 1;
+  padding: 12px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.picker-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.free-text-picker {
+  padding: 4px 0;
+}
+
 /* Recipe Picker */
 .recipe-picker-list {
   display: flex;

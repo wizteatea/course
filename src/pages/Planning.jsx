@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { useState, useEffect, useRef } from 'react';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format, addDays, parseISO, eachDayOfInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -167,6 +167,8 @@ function PlanningDetail({ planning, onBack }) {
   const [pickerTab, setPickerTab] = useState('free');
   const [freeText, setFreeText] = useState('');
   const [saveStatus, setSaveStatus] = useState('saved');
+  const [syncing, setSyncing] = useState(false);
+  const unsubRef = useRef(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'recipes'), (snapshot) => {
@@ -177,15 +179,30 @@ function PlanningDetail({ planning, onBack }) {
     return unsub;
   }, []);
 
-  // Sync temps réel depuis Firestore — toujours à jour pour les deux utilisateurs
+  // Sync temps réel
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'plannings', planning.id), (snapshot) => {
       if (snapshot.exists()) {
         setMeals(snapshot.data().meals || {});
       }
     });
+    unsubRef.current = unsub;
     return unsub;
   }, [planning.id]);
+
+  // Sync manuelle : force une lecture depuis Firestore
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const snapshot = await getDoc(doc(db, 'plannings', planning.id));
+      if (snapshot.exists()) {
+        setMeals(snapshot.data().meals || {});
+      }
+    } catch (err) {
+      console.error('Sync error:', err);
+    }
+    setSyncing(false);
+  };
 
   const days = (() => {
     try {
@@ -266,6 +283,13 @@ function PlanningDetail({ planning, onBack }) {
             </div>
           </div>
           <div className="planning-actions">
+            <button className="btn btn-ghost btn-sm" onClick={handleSync} disabled={syncing} title="Synchroniser">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18"
+                style={{ animation: syncing ? 'spin 0.8s linear infinite' : 'none' }}>
+                <polyline points="1,4 1,10 7,10"/>
+                <path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
+              </svg>
+            </button>
             <button className="btn btn-secondary btn-sm" onClick={() => setShowWeekView(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -273,12 +297,11 @@ function PlanningDetail({ planning, onBack }) {
               Vue
             </button>
             <div className={`save-status save-status--${saveStatus}`}>
-              {saveStatus === 'saving' && <><div className="save-spinner" /> Sauvegarde…</>}
+              {saveStatus === 'saving' && <><div className="save-spinner" /> …</>}
               {saveStatus === 'saved' && <>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" width="14" height="14">
                   <polyline points="20,6 9,17 4,12"/>
                 </svg>
-                Sauvegardé
               </>}
               {saveStatus === 'pending' && '…'}
             </div>

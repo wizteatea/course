@@ -1,0 +1,206 @@
+.shopping-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shopping-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Progress bar */
+.progress-bar {
+  margin-top: 12px;
+  height: 6px;
+  background: var(--border-light);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Categories */
+.shopping-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shopping-category.all-checked {
+  opacity: 0.6;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.category-icon {
+  font-size: 20px;
+}
+
+.category-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+
+.category-count {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.category-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Shopping Item */
+.shopping-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  transition: all 0.2s;
+}
+
+.shopping-item.checked {
+  opacity: 0.5;
+}
+
+.shopping-item.checked .item-name {
+  text-decoration: line-through;
+}
+
+.check-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.item-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.item-qty {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.item-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Sources */
+.item-sources {
+  margin-top: 8px;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--border-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+
+.source-recipe {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.source-meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* Planned meals */
+.planned-meals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.planned-meal-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.planned-meal-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+  min-width: 80px;
+}
+
+.planned-meal-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.planned-meal-recipe {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.planned-meal-user {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+  background: var(--primary-bg);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.no-results {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}

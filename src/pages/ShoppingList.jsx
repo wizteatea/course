@@ -100,6 +100,7 @@ function ShoppingListDetail({ planning, onBack }) {
   const [showAddItem, setShowAddItem] = useState(false);
   const [showMeals, setShowMeals] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [shopMode, setShopMode] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState('');
   const [newItemCat, setNewItemCat] = useState('Autres');
@@ -261,6 +262,91 @@ function ShoppingListDetail({ planning, onBack }) {
     await saveToFirestore({ checked: {}, overrides: {} });
   };
 
+  // Mode courses : vue simplifiée plein écran
+  if (shopMode) {
+    const uncheckedItems = allItems.filter(i => !checked[i.key]);
+    const checkedItemsList = allItems.filter(i => checked[i.key]);
+    const uncheckedGrouped = {};
+    uncheckedItems.forEach(item => {
+      if (!uncheckedGrouped[item.category]) uncheckedGrouped[item.category] = [];
+      uncheckedGrouped[item.category].push(item);
+    });
+
+    return (
+      <div className="shop-mode">
+        <div className="shop-mode-header">
+          <button className="btn-ghost btn-icon" onClick={() => setShopMode(false)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div className="shop-mode-title">
+            <span>Mode Courses</span>
+            <span className="shop-mode-count">{checkedCount}/{totalItems}</span>
+          </div>
+          <div style={{ width: 40 }} />
+        </div>
+        <div className="shop-mode-progress">
+          <div className="progress-fill" style={{ width: `${totalItems > 0 ? (checkedCount / totalItems) * 100 : 0}%` }} />
+        </div>
+        <div className="shop-mode-list">
+          {CATEGORIES.map(cat => {
+            const items = uncheckedGrouped[cat];
+            if (!items || items.length === 0) return null;
+            return (
+              <div key={cat} className="shop-mode-category">
+                <div className="shop-mode-cat-header">
+                  {CATEGORY_ICONS[cat]} {cat}
+                </div>
+                {items.map(item => (
+                  <button
+                    key={item.key}
+                    className="shop-mode-item"
+                    onClick={() => toggleCheck(item.key)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--border)" strokeWidth="2" width="28" height="28">
+                      <circle cx="12" cy="12" r="10"/>
+                    </svg>
+                    <div className="shop-mode-item-info">
+                      <span className="shop-mode-item-name">{item.name}</span>
+                      {item.quantity && <span className="shop-mode-item-qty">{item.quantity}</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+          {uncheckedItems.length === 0 && (
+            <div className="shop-mode-done">
+              <span style={{ fontSize: 48 }}>🎉</span>
+              <h2>Courses terminées !</h2>
+              <p>Tous les articles ont été cochés</p>
+            </div>
+          )}
+          {checkedItemsList.length > 0 && (
+            <div className="shop-mode-checked-section">
+              <div className="shop-mode-checked-title">
+                ✓ Déjà pris ({checkedItemsList.length})
+              </div>
+              {checkedItemsList.map(item => (
+                <button
+                  key={item.key}
+                  className="shop-mode-item checked"
+                  onClick={() => toggleCheck(item.key)}
+                >
+                  <svg viewBox="0 0 24 24" fill="var(--success)" width="28" height="28">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                  </svg>
+                  <span className="shop-mode-item-name">{item.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="shopping-page">
       <div className="page-header">
@@ -277,13 +363,10 @@ function ShoppingListDetail({ planning, onBack }) {
             </div>
           </div>
           <div className="shopping-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => setShopMode(true)}>
+              🛒 Courses
+            </button>
             <button className="btn btn-secondary btn-sm" onClick={() => setShowMeals(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                <rect x="3" y="4" width="18" height="18" rx="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
-              </svg>
               Repas
             </button>
             <button className="btn btn-ghost btn-sm" onClick={handleReset} title="Réinitialiser">

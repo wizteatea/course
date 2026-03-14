@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format, addDays, parseISO, eachDayOfInterval } from 'date-fns';
@@ -160,15 +160,13 @@ export default function Planning() {
 
 function PlanningDetail({ planning, onBack }) {
   const [recipes, setRecipes] = useState([]);
-  const [meals, setMeals] = useState(planning.meals || {});
+  const [meals, setMeals] = useState({});
   const [showRecipePicker, setShowRecipePicker] = useState(null);
   const [showWeekView, setShowWeekView] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [pickerTab, setPickerTab] = useState('free');
   const [freeText, setFreeText] = useState('');
-  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'saving' | 'pending'
-  const saveTimer = useRef(null);
-  const isFirstLoad = useRef(true);
+  const [saveStatus, setSaveStatus] = useState('saved');
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'recipes'), (snapshot) => {
@@ -179,39 +177,15 @@ function PlanningDetail({ planning, onBack }) {
     return unsub;
   }, []);
 
-  // Sync meals from Firestore in real-time
+  // Sync temps réel depuis Firestore — toujours à jour pour les deux utilisateurs
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'plannings', planning.id), (snapshot) => {
       if (snapshot.exists()) {
-        // Only sync from Firestore on first load, not after local changes
-        if (isFirstLoad.current) {
-          setMeals(snapshot.data().meals || {});
-          isFirstLoad.current = false;
-        }
+        setMeals(snapshot.data().meals || {});
       }
     });
     return unsub;
   }, [planning.id]);
-
-  // Auto-save with debounce whenever meals change
-  const autoSave = useCallback(async (mealsToSave) => {
-    setSaveStatus('saving');
-    try {
-      await setDoc(doc(db, 'plannings', planning.id), { meals: mealsToSave }, { merge: true });
-      setSaveStatus('saved');
-    } catch (err) {
-      console.error('Auto-save error:', err);
-      setSaveStatus('pending');
-    }
-  }, [planning.id]);
-
-  useEffect(() => {
-    if (isFirstLoad.current) return;
-    setSaveStatus('pending');
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => autoSave(meals), 800);
-    return () => clearTimeout(saveTimer.current);
-  }, [meals, autoSave]);
 
   const days = (() => {
     try {
@@ -229,23 +203,25 @@ function PlanningDetail({ planning, onBack }) {
     return meals[key]?.[slot]?.[user] || null;
   };
 
-  const setMealData = (date, slot, user, recipe) => {
+  // Écrit directement dans Firestore — pas de state local intermédiaire
+  const setMealData = async (date, slot, user, recipe) => {
     const key = format(date, 'yyyy-MM-dd');
-    setMeals(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [slot]: {
-          ...prev[key]?.[slot],
-          [user]: recipe ? { id: recipe.id, title: recipe.title } : null,
-        }
-      }
-    }));
+    const value = recipe ? { id: recipe.id || null, title: recipe.title } : null;
+    setSaveStatus('saving');
+    try {
+      await setDoc(
+        doc(db, 'plannings', planning.id),
+        { meals: { [key]: { [slot]: { [user]: value } } } },
+        { merge: true }
+      );
+      setSaveStatus('saved');
+    } catch (err) {
+      console.error('Save error:', err);
+      setSaveStatus('pending');
+    }
   };
 
-  const removeMeal = (date, slot, user) => {
-    setMealData(date, slot, user, null);
-  };
+  const removeMeal = (date, slot, user) => setMealData(date, slot, user, null);
 
   const handlePickRecipe = (recipe) => {
     if (showRecipePicker) {

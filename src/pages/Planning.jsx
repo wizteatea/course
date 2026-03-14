@@ -164,7 +164,7 @@ function PlanningDetail({ planning, onBack }) {
   const [showRecipePicker, setShowRecipePicker] = useState(null);
   const [showWeekView, setShowWeekView] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
-  const [pickerTab, setPickerTab] = useState('recipe'); // 'recipe' | 'free'
+  const [pickerTab, setPickerTab] = useState('free'); // 'free' | 'recipe'
   const [freeText, setFreeText] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -315,16 +315,16 @@ function PlanningDetail({ planning, onBack }) {
             </div>
             <div className="picker-tabs">
               <button
+                className={`picker-tab ${pickerTab === 'free' ? 'active' : ''}`}
+                onClick={() => setPickerTab('free')}
+              >
+                ✏️ Écrire
+              </button>
+              <button
                 className={`picker-tab ${pickerTab === 'recipe' ? 'active' : ''}`}
                 onClick={() => setPickerTab('recipe')}
               >
                 📖 Recette
-              </button>
-              <button
-                className={`picker-tab ${pickerTab === 'free' ? 'active' : ''}`}
-                onClick={() => setPickerTab('free')}
-              >
-                ✏️ Texte libre
               </button>
             </div>
             <div className="modal-body">
@@ -499,7 +499,7 @@ function DayCard({ date, getMeal, removeMeal, onPickRecipe }) {
                         </div>
                       ) : (
                         <button className="meal-add-btn" onClick={() => onPickRecipe(slot.id, user)}>
-                          + Recette
+                          + Ajouter
                         </button>
                       )}
                     </div>

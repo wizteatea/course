@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -22,95 +22,133 @@ const CATEGORY_ICONS = {
   'Autres': '📦',
 };
 
+// ─── Page liste des plannings ───────────────────────────────────────────────
+
 export default function ShoppingList() {
+  const [plannings, setPlannings] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'plannings'), (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setPlannings(data);
+    });
+    return unsub;
+  }, []);
+
+  const selected = plannings.find(p => p.id === selectedId);
+
+  if (selected) {
+    return <ShoppingListDetail planning={selected} onBack={() => setSelectedId(null)} />;
+  }
+
+  return (
+    <div className="shopping-page">
+      <div className="page-header">
+        <h1>Courses</h1>
+        <p>Sélectionnez un planning</p>
+      </div>
+      <div className="page-content">
+        {plannings.length === 0 ? (
+          <div className="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 01-8 0"/>
+            </svg>
+            <h3>Aucun planning</h3>
+            <p>Créez un planning dans l'onglet Planning pour générer une liste de courses</p>
+          </div>
+        ) : (
+          <div className="plannings-list">
+            {plannings.map(p => {
+              const itemCount = countAutoItems(p);
+              const manualCount = (p.manualItems || []).length;
+              return (
+                <div key={p.id} className="planning-card card" onClick={() => setSelectedId(p.id)}>
+                  <div className="planning-card-header">
+                    <h3>{p.name}</h3>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                      <polyline points="9,18 15,12 9,6"/>
+                    </svg>
+                  </div>
+                  <div className="planning-card-dates">
+                    <span>{formatDateLabel(p.startDate)}</span>
+                    <span className="date-arrow">→</span>
+                    <span>{formatDateLabel(p.endDate)}</span>
+                  </div>
+                  <div className="planning-card-stats">
+                    {itemCount} article{itemCount !== 1 ? 's' : ''} auto
+                    {manualCount > 0 && ` · ${manualCount} manuel${manualCount !== 1 ? 's' : ''}`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Détail liste de courses d'un planning ──────────────────────────────────
+
+function ShoppingListDetail({ planning, onBack }) {
   const [recipes, setRecipes] = useState([]);
-  const [planning, setPlanning] = useState({});
-  const [checkedItems, setCheckedItems] = useState({});
+  const [planningData, setPlanningData] = useState(planning);
+  const [showAddItem, setShowAddItem] = useState(false);
   const [showMeals, setShowMeals] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [overrides, setOverrides] = useState({}); // { ingredientKey: { category, quantity, deleted } }
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemQty, setNewItemQty] = useState('');
+  const [newItemCat, setNewItemCat] = useState('Autres');
 
-  // Load checked items and overrides from Firestore
   useEffect(() => {
     const unsub1 = onSnapshot(collection(db, 'recipes'), (snapshot) => {
       setRecipes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    const unsub2 = onSnapshot(collection(db, 'plannings'), (snapshot) => {
-      // Merge all plannings' meals into one flat structure
-      const data = {};
-      snapshot.docs.forEach(d => {
-        const planningData = d.data();
-        if (planningData.meals) {
-          Object.entries(planningData.meals).forEach(([date, dayData]) => {
-            if (!data[date]) data[date] = {};
-            Object.entries(dayData).forEach(([slot, slotData]) => {
-              if (!data[date][slot]) data[date][slot] = {};
-              Object.assign(data[date][slot], slotData);
-            });
-          });
-        }
-      });
-      setPlanning(data);
+    const unsub2 = onSnapshot(doc(db, 'plannings', planning.id), (snapshot) => {
+      if (snapshot.exists()) setPlanningData({ id: snapshot.id, ...snapshot.data() });
     });
-    const unsub3 = onSnapshot(doc(db, 'shoppingMeta', 'state'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setCheckedItems(data.checked || {});
-        setOverrides(data.overrides || {});
-      }
-    });
-    return () => { unsub1(); unsub2(); unsub3(); };
-  }, []);
+    return () => { unsub1(); unsub2(); };
+  }, [planning.id]);
 
-  // Build recipe lookup
   const recipeMap = useMemo(() => {
     const map = {};
     recipes.forEach(r => { map[r.id] = r; });
     return map;
   }, [recipes]);
 
-  // Gather all planned meals and their ingredients
-  const { shoppingItems, plannedMeals } = useMemo(() => {
+  // Génère les items auto depuis les repas
+  const { autoItems, plannedMeals } = useMemo(() => {
     const ingredientMap = {};
     const meals = [];
+    const mealsData = planningData.meals || {};
 
-    Object.entries(planning).forEach(([date, dayData]) => {
+    Object.entries(mealsData).forEach(([date, dayData]) => {
       Object.entries(dayData).forEach(([slotId, slotData]) => {
         if (!slotData) return;
         Object.entries(slotData).forEach(([user, meal]) => {
           if (!meal?.id) return;
           const recipe = recipeMap[meal.id];
           if (!recipe) return;
-
           meals.push({ date, slotId, user, recipe });
-
           recipe.ingredients?.forEach(ing => {
             if (!ing.name) return;
             const key = ing.name.toLowerCase().trim();
             if (!ingredientMap[key]) {
-              ingredientMap[key] = {
-                name: ing.name,
-                quantities: [],
-                category: ing.category || 'Autres',
-                sources: [],
-              };
+              ingredientMap[key] = { name: ing.name, quantities: [], category: ing.category || 'Autres', sources: [] };
             }
-            if (ing.quantity) {
-              ingredientMap[key].quantities.push(ing.quantity);
-            }
-            ingredientMap[key].sources.push({
-              recipe: recipe.title,
-              user,
-              date,
-            });
+            if (ing.quantity) ingredientMap[key].quantities.push(ing.quantity);
+            ingredientMap[key].sources.push({ recipe: recipe.title, user, date });
           });
         });
       });
     });
 
-    // Apply overrides
     const items = Object.entries(ingredientMap).map(([key, item]) => {
-      const override = overrides[key];
+      const override = planningData.overrides?.[key];
       if (override?.deleted) return null;
       return {
         key,
@@ -118,10 +156,10 @@ export default function ShoppingList() {
         quantity: override?.quantity ?? mergeQuantities(item.quantities),
         category: override?.category ?? item.category,
         sources: item.sources,
+        isAuto: true,
       };
     }).filter(Boolean);
 
-    // Sort by category then name
     items.sort((a, b) => {
       const catA = CATEGORIES.indexOf(a.category);
       const catB = CATEGORIES.indexOf(b.category);
@@ -129,115 +167,171 @@ export default function ShoppingList() {
       return a.name.localeCompare(b.name);
     });
 
-    // Sort meals by date
     meals.sort((a, b) => a.date.localeCompare(b.date));
+    return { autoItems: items, plannedMeals: meals };
+  }, [planningData, recipeMap]);
 
-    return { shoppingItems: items, plannedMeals: meals };
-  }, [planning, recipeMap, overrides]);
+  // Items manuels
+  const manualItems = useMemo(() => {
+    return (planningData.manualItems || []).map((item, idx) => ({
+      ...item,
+      key: `manual_${idx}`,
+      isAuto: false,
+    }));
+  }, [planningData]);
 
-  // Group items by category
+  // Tous les items groupés par catégorie
+  const allItems = useMemo(() => {
+    return [...autoItems, ...manualItems];
+  }, [autoItems, manualItems]);
+
   const grouped = useMemo(() => {
     const groups = {};
-    shoppingItems.forEach(item => {
+    allItems.forEach(item => {
       if (!groups[item.category]) groups[item.category] = [];
       groups[item.category].push(item);
     });
     return groups;
-  }, [shoppingItems]);
+  }, [allItems]);
+
+  const checked = planningData.checked || {};
+  const totalItems = allItems.length;
+  const checkedCount = allItems.filter(i => checked[i.key]).length;
+
+  const saveToFirestore = async (updates) => {
+    await setDoc(doc(db, 'plannings', planning.id), { ...planningData, ...updates }, { merge: true });
+  };
 
   const toggleCheck = async (key) => {
-    const updated = { ...checkedItems, [key]: !checkedItems[key] };
-    setCheckedItems(updated);
-    await setDoc(doc(db, 'shoppingMeta', 'state'), { checked: updated, overrides }, { merge: true });
+    const updated = { ...checked, [key]: !checked[key] };
+    await saveToFirestore({ checked: updated });
   };
 
-  const handleDeleteItem = async (key) => {
-    const updated = { ...overrides, [key]: { ...overrides[key], deleted: true } };
-    setOverrides(updated);
-    await setDoc(doc(db, 'shoppingMeta', 'state'), { checked: checkedItems, overrides: updated }, { merge: true });
+  const handleDeleteAuto = async (key) => {
+    const updated = { ...(planningData.overrides || {}), [key]: { ...(planningData.overrides?.[key] || {}), deleted: true } };
+    await saveToFirestore({ overrides: updated });
   };
 
-  const handleChangeCategory = async (key, newCategory) => {
-    const updated = { ...overrides, [key]: { ...overrides[key], category: newCategory } };
-    setOverrides(updated);
-    await setDoc(doc(db, 'shoppingMeta', 'state'), { checked: checkedItems, overrides: updated }, { merge: true });
-    setEditingItem(null);
+  const handleDeleteManual = async (idx) => {
+    const updated = [...(planningData.manualItems || [])];
+    updated.splice(idx, 1);
+    await saveToFirestore({ manualItems: updated });
   };
 
-  const handleChangeQuantity = async (key, newQuantity) => {
-    const updated = { ...overrides, [key]: { ...overrides[key], quantity: newQuantity } };
-    setOverrides(updated);
-    await setDoc(doc(db, 'shoppingMeta', 'state'), { checked: checkedItems, overrides: updated }, { merge: true });
+  const handleChangeCategory = async (item, newCategory) => {
+    if (item.isAuto) {
+      const updated = { ...(planningData.overrides || {}), [item.key]: { ...(planningData.overrides?.[item.key] || {}), category: newCategory } };
+      await saveToFirestore({ overrides: updated });
+    } else {
+      const idx = parseInt(item.key.replace('manual_', ''));
+      const updated = [...(planningData.manualItems || [])];
+      updated[idx] = { ...updated[idx], category: newCategory };
+      await saveToFirestore({ manualItems: updated });
+    }
+    setEditingItem(prev => prev ? { ...prev, category: newCategory } : null);
   };
 
-  const handleResetList = async () => {
-    setCheckedItems({});
-    setOverrides({});
-    await setDoc(doc(db, 'shoppingMeta', 'state'), { checked: {}, overrides: {} });
+  const handleChangeQuantity = async (item, newQty) => {
+    if (item.isAuto) {
+      const updated = { ...(planningData.overrides || {}), [item.key]: { ...(planningData.overrides?.[item.key] || {}), quantity: newQty } };
+      await saveToFirestore({ overrides: updated });
+    } else {
+      const idx = parseInt(item.key.replace('manual_', ''));
+      const updated = [...(planningData.manualItems || [])];
+      updated[idx] = { ...updated[idx], quantity: newQty };
+      await saveToFirestore({ manualItems: updated });
+    }
   };
 
-  const totalItems = shoppingItems.length;
-  const checkedCount = shoppingItems.filter(i => checkedItems[i.key]).length;
+  const handleAddManual = async () => {
+    if (!newItemName.trim()) return;
+    const updated = [...(planningData.manualItems || []), {
+      name: newItemName.trim(),
+      quantity: newItemQty.trim(),
+      category: newItemCat,
+    }];
+    await saveToFirestore({ manualItems: updated });
+    setNewItemName('');
+    setNewItemQty('');
+    setNewItemCat('Autres');
+    setShowAddItem(false);
+  };
+
+  const handleReset = async () => {
+    await saveToFirestore({ checked: {}, overrides: {} });
+  };
 
   return (
     <div className="shopping-page">
       <div className="page-header">
         <div className="shopping-header-row">
-          <div>
-            <h1>Liste de courses</h1>
-            <p>{checkedCount}/{totalItems} articles cochés</p>
+          <div className="shopping-back-row">
+            <button className="btn-ghost btn-icon" onClick={onBack}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
+                <polyline points="15,18 9,12 15,6"/>
+              </svg>
+            </button>
+            <div>
+              <h1>{planning.name}</h1>
+              <p>{checkedCount}/{totalItems} cochés</p>
+            </div>
           </div>
           <div className="shopping-actions">
             <button className="btn btn-secondary btn-sm" onClick={() => setShowMeals(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                <rect x="3" y="4" width="18" height="18" rx="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
               </svg>
               Repas
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={handleResetList} title="Réinitialiser">
+            <button className="btn btn-ghost btn-sm" onClick={handleReset} title="Réinitialiser">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                <polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
+                <polyline points="1,4 1,10 7,10"/>
+                <path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
               </svg>
             </button>
           </div>
         </div>
         {totalItems > 0 && (
           <div className="progress-bar">
-            <div className="progress-fill" style={{ width: `${totalItems > 0 ? (checkedCount / totalItems) * 100 : 0}%` }} />
+            <div className="progress-fill" style={{ width: `${(checkedCount / totalItems) * 100}%` }} />
           </div>
         )}
       </div>
 
       <div className="page-content">
-        {totalItems === 0 ? (
+        {allItems.length === 0 ? (
           <div className="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/>
+              <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 01-8 0"/>
             </svg>
             <h3>Liste vide</h3>
-            <p>Planifiez des repas pour générer automatiquement votre liste de courses</p>
+            <p>Ajoutez des recettes à ce planning ou ajoutez des articles manuellement</p>
           </div>
         ) : (
           <div className="shopping-categories">
             {CATEGORIES.map(cat => {
               const items = grouped[cat];
               if (!items || items.length === 0) return null;
-              const allChecked = items.every(i => checkedItems[i.key]);
+              const allChecked = items.every(i => checked[i.key]);
               return (
                 <div key={cat} className={`shopping-category ${allChecked ? 'all-checked' : ''}`}>
                   <div className="category-header">
                     <span className="category-icon">{CATEGORY_ICONS[cat]}</span>
                     <span className="category-name">{cat}</span>
-                    <span className="category-count">{items.filter(i => checkedItems[i.key]).length}/{items.length}</span>
+                    <span className="category-count">
+                      {items.filter(i => checked[i.key]).length}/{items.length}
+                    </span>
                   </div>
                   <div className="category-items">
                     {items.map(item => (
-                      <div
-                        key={item.key}
-                        className={`shopping-item ${checkedItems[item.key] ? 'checked' : ''}`}
-                      >
+                      <div key={item.key} className={`shopping-item ${checked[item.key] ? 'checked' : ''}`}>
                         <button className="check-btn" onClick={() => toggleCheck(item.key)}>
-                          {checkedItems[item.key] ? (
+                          {checked[item.key] ? (
                             <svg viewBox="0 0 24 24" fill="var(--success)" width="22" height="22">
                               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                             </svg>
@@ -248,18 +342,26 @@ export default function ShoppingList() {
                           )}
                         </button>
                         <div className="item-info" onClick={() => setEditingItem(item)}>
-                          <span className="item-name">{item.name}</span>
+                          <div className="item-name-row">
+                            <span className="item-name">{item.name}</span>
+                            {!item.isAuto && <span className="item-manual-badge">manuel</span>}
+                          </div>
                           {item.quantity && <span className="item-qty">{item.quantity}</span>}
                         </div>
                         <div className="item-actions">
-                          <button className="btn-ghost btn-icon-sm" onClick={() => setEditingItem(item)} title="Modifier">
+                          <button className="btn-ghost btn-icon-sm" onClick={() => setEditingItem(item)}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                             </svg>
                           </button>
-                          <button className="btn-ghost btn-icon-sm" onClick={() => handleDeleteItem(item.key)} title="Supprimer">
+                          <button className="btn-ghost btn-icon-sm" onClick={() => {
+                            if (item.isAuto) handleDeleteAuto(item.key);
+                            else handleDeleteManual(parseInt(item.key.replace('manual_', '')));
+                          }}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                              <polyline points="3,6 5,6 21,6"/><path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"/>
+                              <polyline points="3,6 5,6 21,6"/>
+                              <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"/>
                             </svg>
                           </button>
                         </div>
@@ -273,7 +375,73 @@ export default function ShoppingList() {
         )}
       </div>
 
-      {/* Edit Item Modal */}
+      {/* FAB Ajouter article */}
+      <button className="fab" onClick={() => setShowAddItem(true)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+
+      {/* Modal Ajouter article manuel */}
+      {showAddItem && (
+        <div className="modal-overlay" onClick={() => setShowAddItem(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Ajouter un article</h2>
+              <button className="btn-ghost btn-icon" onClick={() => setShowAddItem(false)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="input-group" style={{ marginBottom: 12 }}>
+                <label>Nom</label>
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Ex: Tomates cerises"
+                  value={newItemName}
+                  onChange={e => setNewItemName(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => e.key === 'Enter' && handleAddManual()}
+                />
+              </div>
+              <div className="input-group" style={{ marginBottom: 12 }}>
+                <label>Quantité (optionnel)</label>
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Ex: 500g, 1 bouteille..."
+                  value={newItemQty}
+                  onChange={e => setNewItemQty(e.target.value)}
+                />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label>Catégorie</label>
+                <div className="chip-row">
+                  {CATEGORIES.map(cat => (
+                    <button
+                      key={cat}
+                      className={`chip ${newItemCat === cat ? 'active' : ''}`}
+                      onClick={() => setNewItemCat(cat)}
+                    >
+                      {CATEGORY_ICONS[cat]} {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAddItem(false)}>Annuler</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleAddManual}>Ajouter</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal modifier article */}
       {editingItem && (
         <div className="modal-overlay" onClick={() => setEditingItem(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -292,9 +460,9 @@ export default function ShoppingList() {
                   className="input"
                   type="text"
                   value={editingItem.quantity || ''}
-                  onChange={(e) => {
+                  onChange={e => {
                     setEditingItem({ ...editingItem, quantity: e.target.value });
-                    handleChangeQuantity(editingItem.key, e.target.value);
+                    handleChangeQuantity(editingItem, e.target.value);
                   }}
                   placeholder="Ex: 500g, 2 pièces..."
                 />
@@ -306,31 +474,32 @@ export default function ShoppingList() {
                     <button
                       key={cat}
                       className={`chip ${editingItem.category === cat ? 'active' : ''}`}
-                      onClick={() => {
-                        setEditingItem({ ...editingItem, category: cat });
-                        handleChangeCategory(editingItem.key, cat);
-                      }}
+                      onClick={() => handleChangeCategory(editingItem, cat)}
                     >
                       {CATEGORY_ICONS[cat]} {cat}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="item-sources">
-                <label style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, display: 'block' }}>Utilisé dans :</label>
-                {editingItem.sources?.map((s, i) => (
-                  <div key={i} className="source-item">
-                    <span className="source-recipe">{s.recipe}</span>
-                    <span className="source-meta">{s.user} · {formatDateShort(s.date)}</span>
-                  </div>
-                ))}
-              </div>
+              {editingItem.isAuto && editingItem.sources?.length > 0 && (
+                <div className="item-sources">
+                  <label style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, display: 'block' }}>
+                    Utilisé dans :
+                  </label>
+                  {editingItem.sources.map((s, i) => (
+                    <div key={i} className="source-item">
+                      <span className="source-recipe">{s.recipe}</span>
+                      <span className="source-meta">{s.user} · {formatDateShort(s.date)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Planned Meals Modal */}
+      {/* Modal repas planifiés */}
       {showMeals && (
         <div className="modal-overlay" onClick={() => setShowMeals(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -366,17 +535,30 @@ export default function ShoppingList() {
   );
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function countAutoItems(planning) {
+  const meals = planning.meals || {};
+  const keys = new Set();
+  Object.values(meals).forEach(day => {
+    Object.values(day).forEach(slot => {
+      if (!slot) return;
+      Object.values(slot).forEach(meal => {
+        if (meal?.id) keys.add(meal.id);
+      });
+    });
+  });
+  return keys.size;
+}
+
 function mergeQuantities(quantities) {
   if (quantities.length === 0) return '';
   if (quantities.length === 1) return quantities[0];
-
-  // Try to sum numeric quantities with same unit
   const parsed = quantities.map(q => {
     const match = q.match(/^(\d+(?:[.,]\d+)?)\s*(.*)$/);
     if (match) return { num: parseFloat(match[1].replace(',', '.')), unit: match[2].trim().toLowerCase() };
     return null;
   });
-
   if (parsed.every(p => p !== null)) {
     const units = [...new Set(parsed.map(p => p.unit))];
     if (units.length === 1) {
@@ -385,14 +567,15 @@ function mergeQuantities(quantities) {
       return units[0] ? `${display} ${units[0]}` : display;
     }
   }
-
   return quantities.join(' + ');
 }
 
+function formatDateLabel(dateStr) {
+  try { return format(parseISO(dateStr), 'd MMM yyyy', { locale: fr }); }
+  catch { return dateStr; }
+}
+
 function formatDateShort(dateStr) {
-  try {
-    return format(parseISO(dateStr), 'EEE d MMM', { locale: fr });
-  } catch {
-    return dateStr;
-  }
+  try { return format(parseISO(dateStr), 'EEE d MMM', { locale: fr }); }
+  catch { return dateStr; }
 }

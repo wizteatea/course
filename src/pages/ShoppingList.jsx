@@ -121,11 +121,12 @@ function ShoppingListDetail({ planning, onBack }) {
     return map;
   }, [recipes]);
 
-  // Génère les items auto depuis les repas
+  // Génère les items auto depuis les repas (sans doubler les quantités pour une même recette)
   const { autoItems, plannedMeals } = useMemo(() => {
     const ingredientMap = {};
     const meals = [];
     const mealsData = planningData.meals || {};
+    const processedRecipeIds = new Set();
 
     Object.entries(mealsData).forEach(([date, dayData]) => {
       Object.entries(dayData).forEach(([slotId, slotData]) => {
@@ -135,14 +136,25 @@ function ShoppingListDetail({ planning, onBack }) {
           const recipe = recipeMap[meal.id];
           if (!recipe) return;
           meals.push({ date, slotId, user, recipe });
+          // N'ajouter les ingrédients qu'une seule fois par recette unique
+          if (!processedRecipeIds.has(meal.id)) {
+            processedRecipeIds.add(meal.id);
+            recipe.ingredients?.forEach(ing => {
+              if (!ing.name) return;
+              const key = ing.name.toLowerCase().trim();
+              if (!ingredientMap[key]) {
+                ingredientMap[key] = { name: ing.name, quantities: [], category: ing.category || 'Autres', sources: [] };
+              }
+              if (ing.quantity) ingredientMap[key].quantities.push(ing.quantity);
+            });
+          }
+          // Toujours ajouter la source pour la traçabilité
           recipe.ingredients?.forEach(ing => {
             if (!ing.name) return;
             const key = ing.name.toLowerCase().trim();
-            if (!ingredientMap[key]) {
-              ingredientMap[key] = { name: ing.name, quantities: [], category: ing.category || 'Autres', sources: [] };
+            if (ingredientMap[key]) {
+              ingredientMap[key].sources.push({ recipe: recipe.title, user, date });
             }
-            if (ing.quantity) ingredientMap[key].quantities.push(ing.quantity);
-            ingredientMap[key].sources.push({ recipe: recipe.title, user, date });
           });
         });
       });

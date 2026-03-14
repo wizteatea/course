@@ -1,3 +1,68 @@
+/* Planning List */
+.plannings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.planning-card {
+  padding: 16px;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+
+.planning-card:active {
+  background: var(--border-light);
+}
+
+.planning-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.planning-card-header h3 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.planning-card-dates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  text-transform: capitalize;
+}
+
+.date-arrow {
+  color: var(--text-tertiary);
+}
+
+.planning-card-stats {
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* Detail header */
+.planning-back-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.planning-back-row h1 {
+  font-size: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .planning-header-row {
   display: flex;
   align-items: flex-start;

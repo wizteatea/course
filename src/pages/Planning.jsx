@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format, addDays, parseISO, eachDayOfInterval } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -17,37 +17,178 @@ const MEAL_SLOTS = [
 const USERS = ['Teef', 'Maxime'];
 
 export default function Planning() {
+  const [plannings, setPlannings] = useState([]);
+  const [selectedPlanningId, setSelectedPlanningId] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newStart, setNewStart] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [newEnd, setNewEnd] = useState(format(addDays(new Date(), 6), 'yyyy-MM-dd'));
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'plannings'), (snapshot) => {
+      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setPlannings(data);
+    });
+    return unsub;
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newStart || !newEnd) return;
+    await addDoc(collection(db, 'plannings'), {
+      name: newName.trim(),
+      startDate: newStart,
+      endDate: newEnd,
+      meals: {},
+      createdAt: new Date().toISOString(),
+    });
+    setShowCreateModal(false);
+    setNewName('');
+    setNewStart(format(new Date(), 'yyyy-MM-dd'));
+    setNewEnd(format(addDays(new Date(), 6), 'yyyy-MM-dd'));
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Supprimer ce planning ?')) {
+      await deleteDoc(doc(db, 'plannings', id));
+    }
+  };
+
+  const selectedPlanning = plannings.find(p => p.id === selectedPlanningId);
+
+  if (selectedPlanning) {
+    return (
+      <PlanningDetail
+        planning={selectedPlanning}
+        onBack={() => setSelectedPlanningId(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="planning-page">
+      <div className="page-header">
+        <h1>Plannings</h1>
+        <p>{plannings.length} planning{plannings.length !== 1 ? 's' : ''}</p>
+      </div>
+
+      <div className="page-content">
+        {plannings.length === 0 ? (
+          <div className="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <h3>Aucun planning</h3>
+            <p>Créez votre premier planning de repas</p>
+          </div>
+        ) : (
+          <div className="plannings-list">
+            {plannings.map(p => (
+              <div key={p.id} className="planning-card card" onClick={() => setSelectedPlanningId(p.id)}>
+                <div className="planning-card-header">
+                  <h3>{p.name}</h3>
+                  <button className="btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="18" height="18">
+                      <polyline points="3,6 5,6 21,6"/><path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2v2"/>
+                    </svg>
+                  </button>
+                </div>
+                <div className="planning-card-dates">
+                  <span>{formatDateLabel(p.startDate)}</span>
+                  <span className="date-arrow">→</span>
+                  <span>{formatDateLabel(p.endDate)}</span>
+                </div>
+                <div className="planning-card-stats">
+                  {countMeals(p.meals)} repas planifiés
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button className="fab" onClick={() => setShowCreateModal(true)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Nouveau planning</h2>
+              <button className="btn-ghost btn-icon" onClick={() => setShowCreateModal(false)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="input-group" style={{ marginBottom: 16 }}>
+                <label>Nom du planning</label>
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Ex: Semaine du 17 mars"
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="date-range">
+                <div className="date-input-group">
+                  <label>Du</label>
+                  <input type="date" className="input" value={newStart} onChange={e => setNewStart(e.target.value)} />
+                </div>
+                <div className="date-input-group">
+                  <label>Au</label>
+                  <input type="date" className="input" value={newEnd} onChange={e => setNewEnd(e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowCreateModal(false)}>Annuler</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleCreate}>Créer</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanningDetail({ planning, onBack }) {
   const [recipes, setRecipes] = useState([]);
-  const [planning, setPlanning] = useState({});
-  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(addDays(new Date(), 6), 'yyyy-MM-dd'));
-  const [showRecipePicker, setShowRecipePicker] = useState(null); // { date, slot, user }
+  const [meals, setMeals] = useState(planning.meals || {});
+  const [showRecipePicker, setShowRecipePicker] = useState(null);
   const [showWeekView, setShowWeekView] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const unsub1 = onSnapshot(collection(db, 'recipes'), (snapshot) => {
+    const unsub = onSnapshot(collection(db, 'recipes'), (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       setRecipes(data);
     });
-
-    const unsub2 = onSnapshot(collection(db, 'planning'), (snapshot) => {
-      const data = {};
-      snapshot.docs.forEach(d => {
-        data[d.id] = d.data();
-      });
-      setPlanning(data);
-    });
-
-    return () => { unsub1(); unsub2(); };
+    return unsub;
   }, []);
+
+  // Sync meals from Firestore in real-time
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'plannings', planning.id), (snapshot) => {
+      if (snapshot.exists()) {
+        setMeals(snapshot.data().meals || {});
+      }
+    });
+    return unsub;
+  }, [planning.id]);
 
   const days = (() => {
     try {
-      const start = parseISO(startDate);
-      const end = parseISO(endDate);
+      const start = parseISO(planning.startDate);
+      const end = parseISO(planning.endDate);
       if (end < start) return [];
       return eachDayOfInterval({ start, end });
     } catch {
@@ -57,12 +198,12 @@ export default function Planning() {
 
   const getMeal = (date, slot, user) => {
     const key = format(date, 'yyyy-MM-dd');
-    return planning[key]?.[slot]?.[user] || null;
+    return meals[key]?.[slot]?.[user] || null;
   };
 
-  const setMeal = (date, slot, user, recipe) => {
+  const setMealData = (date, slot, user, recipe) => {
     const key = format(date, 'yyyy-MM-dd');
-    setPlanning(prev => ({
+    setMeals(prev => ({
       ...prev,
       [key]: {
         ...prev[key],
@@ -75,12 +216,12 @@ export default function Planning() {
   };
 
   const removeMeal = (date, slot, user) => {
-    setMeal(date, slot, user, null);
+    setMealData(date, slot, user, null);
   };
 
   const handlePickRecipe = (recipe) => {
     if (showRecipePicker) {
-      setMeal(showRecipePicker.date, showRecipePicker.slot, showRecipePicker.user, recipe);
+      setMealData(showRecipePicker.date, showRecipePicker.slot, showRecipePicker.user, recipe);
       setShowRecipePicker(null);
       setRecipeSearch('');
     }
@@ -89,10 +230,7 @@ export default function Planning() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const promises = Object.entries(planning).map(([date, data]) =>
-        setDoc(doc(db, 'planning', date), data)
-      );
-      await Promise.all(promises);
+      await setDoc(doc(db, 'plannings', planning.id), { ...planning, meals }, { merge: true });
     } catch (error) {
       console.error('Save error:', error);
     }
@@ -103,18 +241,20 @@ export default function Planning() {
     r.title?.toLowerCase().includes(recipeSearch.toLowerCase())
   );
 
-  const getRecipeTitle = (meal) => {
-    if (!meal) return null;
-    return meal.title || 'Recette';
-  };
-
   return (
     <div className="planning-page">
       <div className="page-header">
         <div className="planning-header-row">
-          <div>
-            <h1>Planning</h1>
-            <p>Planifiez vos repas</p>
+          <div className="planning-back-row">
+            <button className="btn-ghost btn-icon" onClick={onBack}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24">
+                <polyline points="15,18 9,12 15,6"/>
+              </svg>
+            </button>
+            <div>
+              <h1>{planning.name}</h1>
+              <p>{formatDateLabel(planning.startDate)} → {formatDateLabel(planning.endDate)}</p>
+            </div>
           </div>
           <div className="planning-actions">
             <button className="btn btn-secondary btn-sm" onClick={() => setShowWeekView(true)}>
@@ -124,44 +264,24 @@ export default function Planning() {
               Vue
             </button>
             <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-              {saving ? 'Sauvegarde...' : 'Sauvegarder'}
+              {saving ? '...' : 'Sauver'}
             </button>
-          </div>
-        </div>
-        <div className="date-range">
-          <div className="date-input-group">
-            <label>Du</label>
-            <input type="date" className="input" value={startDate} onChange={e => setStartDate(e.target.value)} />
-          </div>
-          <div className="date-input-group">
-            <label>Au</label>
-            <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
         </div>
       </div>
 
       <div className="page-content">
-        {days.length === 0 ? (
-          <div className="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-            <h3>Choisissez vos dates</h3>
-            <p>Sélectionnez une période pour planifier vos repas</p>
-          </div>
-        ) : (
-          <div className="days-list">
-            {days.map(date => (
-              <DayCard
-                key={format(date, 'yyyy-MM-dd')}
-                date={date}
-                getMeal={getMeal}
-                removeMeal={removeMeal}
-                onPickRecipe={(slot, user) => setShowRecipePicker({ date, slot, user })}
-              />
-            ))}
-          </div>
-        )}
+        <div className="days-list">
+          {days.map(date => (
+            <DayCard
+              key={format(date, 'yyyy-MM-dd')}
+              date={date}
+              getMeal={getMeal}
+              removeMeal={removeMeal}
+              onPickRecipe={(slot, user) => setShowRecipePicker({ date, slot, user })}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Recipe Picker Modal */}
@@ -220,7 +340,7 @@ export default function Planning() {
             <div className="modal-body week-view-body">
               {days.map(date => {
                 const key = format(date, 'yyyy-MM-dd');
-                const dayData = planning[key];
+                const dayData = meals[key];
                 const hasMeals = dayData && Object.values(dayData).some(slot =>
                   slot && Object.values(slot).some(m => m)
                 );
@@ -252,7 +372,7 @@ export default function Planning() {
                 );
               })}
               {!days.some(date => {
-                const dayData = planning[format(date, 'yyyy-MM-dd')];
+                const dayData = meals[format(date, 'yyyy-MM-dd')];
                 return dayData && Object.values(dayData).some(slot =>
                   slot && Object.values(slot).some(m => m)
                 );
@@ -270,7 +390,7 @@ export default function Planning() {
 }
 
 function DayCard({ date, getMeal, removeMeal, onPickRecipe }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const dayName = format(date, 'EEEE', { locale: fr });
   const dayDate = format(date, 'd MMMM', { locale: fr });
 
@@ -334,4 +454,25 @@ function DayCard({ date, getMeal, removeMeal, onPickRecipe }) {
       )}
     </div>
   );
+}
+
+function formatDateLabel(dateStr) {
+  try {
+    return format(parseISO(dateStr), 'd MMM yyyy', { locale: fr });
+  } catch {
+    return dateStr;
+  }
+}
+
+function countMeals(meals) {
+  if (!meals) return 0;
+  let count = 0;
+  Object.values(meals).forEach(day => {
+    if (day) Object.values(day).forEach(slot => {
+      if (slot) Object.values(slot).forEach(m => {
+        if (m) count++;
+      });
+    });
+  });
+  return count;
 }

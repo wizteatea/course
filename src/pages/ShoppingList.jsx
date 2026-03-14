@@ -35,9 +35,21 @@ export default function ShoppingList() {
     const unsub1 = onSnapshot(collection(db, 'recipes'), (snapshot) => {
       setRecipes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    const unsub2 = onSnapshot(collection(db, 'planning'), (snapshot) => {
+    const unsub2 = onSnapshot(collection(db, 'plannings'), (snapshot) => {
+      // Merge all plannings' meals into one flat structure
       const data = {};
-      snapshot.docs.forEach(d => { data[d.id] = d.data(); });
+      snapshot.docs.forEach(d => {
+        const planningData = d.data();
+        if (planningData.meals) {
+          Object.entries(planningData.meals).forEach(([date, dayData]) => {
+            if (!data[date]) data[date] = {};
+            Object.entries(dayData).forEach(([slot, slotData]) => {
+              if (!data[date][slot]) data[date][slot] = {};
+              Object.assign(data[date][slot], slotData);
+            });
+          });
+        }
+      });
       setPlanning(data);
     });
     const unsub3 = onSnapshot(doc(db, 'shoppingMeta', 'state'), (snapshot) => {

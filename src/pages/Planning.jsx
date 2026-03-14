@@ -164,7 +164,7 @@ function PlanningDetail({ planning, onBack }) {
   const [showRecipePicker, setShowRecipePicker] = useState(null);
   const [showWeekView, setShowWeekView] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
-  const [pickerTab, setPickerTab] = useState('free');
+
   const [freeText, setFreeText] = useState('');
   const [saveStatus, setSaveStatus] = useState('saved');
   const [syncing, setSyncing] = useState(false);
@@ -240,32 +240,47 @@ function PlanningDetail({ planning, onBack }) {
 
   const removeMeal = (date, slot, user) => setMealData(date, slot, user, null);
 
-  const handlePickRecipe = (recipe) => {
+  // Récupérer les repas récents (déjà utilisés dans ce planning)
+  const recentMeals = (() => {
+    const seen = new Map();
+    Object.values(meals).forEach(day => {
+      if (!day) return;
+      Object.values(day).forEach(slot => {
+        if (!slot) return;
+        Object.values(slot).forEach(meal => {
+          if (meal?.title && !seen.has(meal.title)) {
+            seen.set(meal.title, { id: meal.id || null, title: meal.title });
+          }
+        });
+      });
+    });
+    return [...seen.values()];
+  })();
+
+  const handlePick = (item) => {
     if (showRecipePicker) {
-      setMealData(showRecipePicker.date, showRecipePicker.slot, showRecipePicker.user, recipe);
+      setMealData(showRecipePicker.date, showRecipePicker.slot, showRecipePicker.user, item);
       closePicker();
     }
   };
 
   const handlePickFreeText = () => {
     if (!freeText.trim() || !showRecipePicker) return;
-    setMealData(showRecipePicker.date, showRecipePicker.slot, showRecipePicker.user, {
-      id: null,
-      title: freeText.trim(),
-    });
-    closePicker();
+    handlePick({ id: null, title: freeText.trim() });
   };
 
   const closePicker = () => {
     setShowRecipePicker(null);
     setRecipeSearch('');
     setFreeText('');
-    setPickerTab('free');
+    setShowFreeInput(false);
   };
 
-  const filteredRecipes = recipes.filter(r =>
-    r.title?.toLowerCase().includes(recipeSearch.toLowerCase())
-  );
+  const [showFreeInput, setShowFreeInput] = useState(false);
+
+  const filteredRecipes = recipeSearch
+    ? recipes.filter(r => r.title?.toLowerCase().includes(recipeSearch.toLowerCase()))
+    : recipes;
 
   return (
     <div className="planning-page">
@@ -323,10 +338,10 @@ function PlanningDetail({ planning, onBack }) {
         </div>
       </div>
 
-      {/* Recipe Picker Modal */}
+      {/* Picker — ergonomique, zéro clavier par défaut */}
       {showRecipePicker && (
         <div className="modal-overlay" onClick={closePicker}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content picker-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Ajouter un repas</h2>
               <button className="btn-ghost btn-icon" onClick={closePicker}>
@@ -335,71 +350,76 @@ function PlanningDetail({ planning, onBack }) {
                 </svg>
               </button>
             </div>
-            <div className="picker-tabs">
-              <button
-                className={`picker-tab ${pickerTab === 'free' ? 'active' : ''}`}
-                onClick={() => setPickerTab('free')}
-              >
-                ✏️ Écrire
-              </button>
-              <button
-                className={`picker-tab ${pickerTab === 'recipe' ? 'active' : ''}`}
-                onClick={() => setPickerTab('recipe')}
-              >
-                📖 Recette
-              </button>
-            </div>
-            <div className="modal-body">
-              {pickerTab === 'recipe' ? (
-                <>
-                  <div className="search-bar" style={{ marginBottom: 12 }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input
-                      type="text"
-                      placeholder="Rechercher une recette..."
-                      value={recipeSearch}
-                      onChange={e => setRecipeSearch(e.target.value)}
-                      autoFocus={pickerTab === 'recipe'}
-                    />
-                  </div>
-                  <div className="recipe-picker-list">
-                    {filteredRecipes.map(recipe => (
-                      <button key={recipe.id} className="recipe-pick-item" onClick={() => handlePickRecipe(recipe)}>
-                        <span className="recipe-pick-title">{recipe.title}</span>
-                        <span className="recipe-pick-count">{recipe.ingredients?.length || 0} ing.</span>
+            <div className="modal-body picker-body">
+              {/* Récents — 1 tap */}
+              {recentMeals.length > 0 && (
+                <div className="picker-section">
+                  <div className="picker-section-title">Récents</div>
+                  <div className="picker-chips">
+                    {recentMeals.map((m, i) => (
+                      <button key={i} className="picker-chip" onClick={() => handlePick(m)}>
+                        {m.title}
                       </button>
                     ))}
-                    {filteredRecipes.length === 0 && (
-                      <p className="no-results">Aucune recette trouvée</p>
-                    )}
                   </div>
-                </>
-              ) : (
-                <div className="free-text-picker">
-                  <div className="input-group">
-                    <label>Qu'est-ce que vous mangez ?</label>
+                </div>
+              )}
+
+              {/* Recettes — 1 tap */}
+              {recipes.length > 0 && (
+                <div className="picker-section">
+                  <div className="picker-section-title">Recettes</div>
+                  {recipes.length > 6 && (
+                    <div className="search-bar picker-search">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      <input
+                        type="text"
+                        placeholder="Filtrer..."
+                        value={recipeSearch}
+                        onChange={e => setRecipeSearch(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <div className="picker-recipe-list">
+                    {filteredRecipes.map(recipe => (
+                      <button key={recipe.id} className="picker-recipe-btn" onClick={() => handlePick(recipe)}>
+                        <span>{recipe.title}</span>
+                        <span className="picker-recipe-count">{recipe.ingredients?.length || 0} ing.</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Texte libre — clavier seulement si demandé */}
+              <div className="picker-section">
+                {!showFreeInput ? (
+                  <button className="picker-free-btn" onClick={() => setShowFreeInput(true)}>
+                    ✏️ Écrire autre chose...
+                  </button>
+                ) : (
+                  <div className="picker-free-input">
                     <input
                       className="input"
                       type="text"
-                      placeholder="Ex: Pain, yaourt, café..."
+                      placeholder="Pain, yaourt, café..."
                       value={freeText}
                       onChange={e => setFreeText(e.target.value)}
-                      autoFocus={pickerTab === 'free'}
+                      autoFocus
                       onKeyDown={e => e.key === 'Enter' && handlePickFreeText()}
                     />
+                    <button
+                      className="btn btn-primary"
+                      onClick={handlePickFreeText}
+                      disabled={!freeText.trim()}
+                    >
+                      OK
+                    </button>
                   </div>
-                  <button
-                    className="btn btn-primary btn-full"
-                    style={{ marginTop: 16 }}
-                    onClick={handlePickFreeText}
-                    disabled={!freeText.trim()}
-                  >
-                    Ajouter
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>

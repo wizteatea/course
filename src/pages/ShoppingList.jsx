@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { guessCategory } from '../utils/guessCategory';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import './ShoppingList.css';
@@ -113,6 +114,7 @@ function ShoppingListDetail({ planning, onBack }) {
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState('');
   const [newItemCat, setNewItemCat] = useState('Autres');
+  const [newItemCatAuto, setNewItemCatAuto] = useState(true);
 
   useEffect(() => {
     const unsub1 = onSnapshot(collection(db, 'recipes'), (snapshot) => {
@@ -152,7 +154,8 @@ function ShoppingListDetail({ planning, onBack }) {
               if (!ing.name) return;
               const key = ing.name.toLowerCase().trim();
               if (!ingredientMap[key]) {
-                ingredientMap[key] = { name: ing.name, quantities: [], category: ing.category || 'Autres', sources: [] };
+                const cat = (ing.category && ing.category !== 'Autres') ? ing.category : guessCategory(ing.name);
+                ingredientMap[key] = { name: ing.name, quantities: [], category: cat, sources: [] };
               }
               if (ing.quantity) ingredientMap[key].quantities.push(ing.quantity);
             });
@@ -276,6 +279,7 @@ function ShoppingListDetail({ planning, onBack }) {
     setNewItemName('');
     setNewItemQty('');
     setNewItemCat('Autres');
+    setNewItemCatAuto(true);
     setShowAddItem(false);
   };
 
@@ -507,7 +511,10 @@ function ShoppingListDetail({ planning, onBack }) {
                   type="text"
                   placeholder="Ex: Tomates cerises"
                   value={newItemName}
-                  onChange={e => setNewItemName(e.target.value)}
+                  onChange={e => {
+                    setNewItemName(e.target.value);
+                    if (newItemCatAuto) setNewItemCat(guessCategory(e.target.value));
+                  }}
                   autoFocus
                   onKeyDown={e => e.key === 'Enter' && handleAddManual()}
                 />
@@ -529,7 +536,7 @@ function ShoppingListDetail({ planning, onBack }) {
                     <button
                       key={cat}
                       className={`chip ${newItemCat === cat ? 'active' : ''}`}
-                      onClick={() => setNewItemCat(cat)}
+                      onClick={() => { setNewItemCat(cat); setNewItemCatAuto(false); }}
                     >
                       {CATEGORY_ICONS[cat]} {cat}
                     </button>

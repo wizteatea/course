@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { guessCategory } from '../utils/guessCategory';
 import './Recipes.css';
 
 const CATEGORIES = [
@@ -51,12 +52,26 @@ export default function Recipes() {
   const updateIngredient = (index, field, value) => {
     const updated = [...ingredients];
     updated[index] = { ...updated[index], [field]: value };
+    if (field === 'name') {
+      const current = updated[index].category;
+      // Auto-catégorisation tant que l'utilisateur n'a pas choisi lui-même
+      if (!current || current === 'Autres' || updated[index]._autoCat) {
+        const guess = guessCategory(value);
+        updated[index].category = guess;
+        updated[index]._autoCat = true;
+      }
+    }
+    if (field === 'category') {
+      updated[index]._autoCat = false;
+    }
     setIngredients(updated);
   };
 
   const handleSave = async () => {
     if (!title.trim()) return;
-    const validIngredients = ingredients.filter(i => i.name.trim());
+    const validIngredients = ingredients
+      .filter(i => i.name.trim())
+      .map(i => { const { _autoCat: _, ...rest } = i; return rest; });
     const data = { title: title.trim(), ingredients: validIngredients };
 
     if (editingRecipe) {
